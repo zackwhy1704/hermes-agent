@@ -53,6 +53,7 @@ import {
 import { type KeybindContribution, KEYBINDS_AREA } from '@/lib/keybinds/actions'
 import { TRANSCRIPT_DIRECTIVE_AREA, type TranscriptDirectiveContribution } from '@/lib/transcript-directives'
 import { setYoloEnabled } from '@/lib/yolo-session'
+import { capabilityOn } from '@/store/capability-flags'
 import { $connectionsRegistry } from '@/store/connection-registry-state'
 import { watchDeadSessionPrune } from '@/store/dead-session-prune'
 import { $interfaceMode, $showsAdvancedChrome, setModeContext, toggleSimpleMode } from '@/store/interface-mode'
@@ -188,6 +189,8 @@ const workspaceTabDrag = (event: ReactPointerEvent<HTMLElement>, onTap: () => vo
   return true
 }
 
+const GATED_TOOL_PANES = new Set(['terminal', 'files', 'review'])
+
 registry.registerMany([
   {
     id: 'sessions',
@@ -286,7 +289,13 @@ registry.registerMany([
     },
     render: () => idle(<ReviewPaneContent />)
   }
-])
+  // Terminal, Files and Review drive the PTY host, the fs surface and git —
+  // all gated off in 2a-2c, so their chrome is dropped rather than left to
+  // render against doors that are gone. Filtering the array keeps the pane
+  // definitions intact and revertable; this is the logs-pane rule (a pane the
+  // registry never sees has no preset or re-adoption path) applied at boot
+  // instead of on a toggle.
+].filter(pane => capabilityOn('toolPanes') || !GATED_TOOL_PANES.has(pane.id)))
 
 // ---------------------------------------------------------------------------
 // Chrome contributions. The title bar and status bar are fixed chrome outside
@@ -587,22 +596,31 @@ bindPaneVisibility(
   closeReview,
   () => openReview($reviewScopeCwd.get(), $reviewScopeTarget.get())
 )
+
 // ⌃` / statusbar toggle — the terminal COLLAPSES to a rail (tab stays), not
 // hides; PTYs stay alive while collapsed (see PersistentTerminal). Simple has
 // no terminal: where chrome is off a closed one hides, rail and all, and ⌃`
 // is the door for the session.
-bindToolPaneCollapse(
-  'terminal',
-  $terminalTakeover,
-  () => setTerminalTakeover(false),
-  () => setTerminalTakeover(true),
-  $showsAdvancedChrome
-)
+if (capabilityOn('toolPanes')) {
+  bindToolPaneCollapse(
+    'terminal',
+    $terminalTakeover,
+    () => setTerminalTakeover(false),
+    () => setTerminalTakeover(true),
+    $showsAdvancedChrome
+  )
+}
+
 // Without the statusbar, the rail is the only way to switch profiles or gateways.
 $profiles.subscribe(profiles => setModeContext({ profileCount: profiles.length }))
 $connectionsRegistry.subscribe(registry => setModeContext({ connectionCount: registry?.connections.length ?? 0 }))
-// ⌘K door onto the same pane the keybind and statusbar pill flip.
-registry.register(terminalPaletteToggle)
+
+// ⌘K door onto the same pane the keybind and statusbar pill flip. Gated with
+// the pane itself: a palette row that reveals a pane the registry never got
+// would front an empty zone.
+if (capabilityOn('toolPanes')) {
+  registry.register(terminalPaletteToggle)
+}
 
 // Logs are ⌘K-ONLY chrome: the pane contribution EXISTS only while $logsOpen
 // is on. Off (the default) keeps logs out of the registry and the tree

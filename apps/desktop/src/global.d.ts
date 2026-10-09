@@ -384,6 +384,7 @@ declare global {
       translucencySupported?: boolean
       /** Feature flag: the local-models UI is enabled. */
       localModelsEnabled?: boolean
+      capabilities?: Record<string, boolean>
       /** Launch flag shared with every backend the app starts. */
       guestOnboardingEnabled?: boolean
       /** Sanitized local `display.skin`, available before any gateway connects. */
