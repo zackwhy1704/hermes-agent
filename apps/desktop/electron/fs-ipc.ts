@@ -7,6 +7,13 @@ import path from 'node:path'
 
 import { ipcMain, shell } from 'electron'
 
+// `fsWrite` gates the whole local-filesystem surface the file browser and
+// preview panes drive, not only the three true writes (writeText, rename,
+// trash). logsRoot creates its directory; reveal and openDir are OS shell
+// doors; gitRoot is a path resolution. They are grouped under one flag because
+// this fork removes the surface all of them exist to serve, and a door left
+// registered for a deleted surface is still a door.
+import { handleWhenEnabled } from './capability-ipc'
 import { installDesktopPluginFromGit, probePluginRepo } from './desktop-plugin-install'
 import { removeDesktopPlugin } from './desktop-plugin-remove'
 import {
@@ -38,13 +45,13 @@ export function registerFsIpc({
 }: FsIpcDeps) {
   ipcMain.handle('hermes:fs:readDir', async (_event, dirPath) => readDirForIpc(dirPath))
 
-  ipcMain.handle('hermes:fs:gitRoot', async (_event, startPath) => gitRootForIpc(startPath))
+  handleWhenEnabled('fsWrite', 'hermes:fs:gitRoot', async (_event, startPath) => gitRootForIpc(startPath))
 
   // Reveal a path in the OS file manager (Finder / Explorer / Files).
   // `showItemInFolder` silently no-ops on a missing item, and a remote
   // backend's paths are missing here by construction — answer `false` so
   // the renderer can say so instead of reporting a click that showed nothing.
-  ipcMain.handle('hermes:fs:reveal', async (_event, targetPath) => {
+  handleWhenEnabled('fsWrite', 'hermes:fs:reveal', async (_event, targetPath) => {
     const target = String(targetPath || '').trim()
 
     if (!target) {
@@ -73,7 +80,7 @@ export function registerFsIpc({
   // path — the "Open plugins folder" Windows bug), this is for the plugins door,
   // which often doesn't exist on first use. `shell.openPath` returns '' on
   // success or an error string; both mkdir + openPath failures are surfaced.
-  ipcMain.handle('hermes:fs:openDir', async (_event, dirPath) => {
+  handleWhenEnabled('fsWrite', 'hermes:fs:openDir', async (_event, dirPath) => {
     const dir = String(dirPath || '').trim()
 
     if (!dir) {
@@ -144,7 +151,7 @@ export function registerFsIpc({
   // caller names the profile that OWNS the failing session: a pooled backend
   // serves many profile homes, and the active Desktop profile is the launch
   // one, not the one whose agent.log holds the failure (#119080).
-  ipcMain.handle('hermes:fs:logsRoot', async (_event, profile) => localPluginsRoot('logs', profile))
+  handleWhenEnabled('fsWrite', 'hermes:fs:logsRoot', async (_event, profile) => localPluginsRoot('logs', profile))
 
   ipcMain.handle('hermes:plugin:probe', async (_event, payload) => {
     const identifier = String(payload?.identifier || payload?.repo || '').trim()
@@ -180,7 +187,7 @@ export function registerFsIpc({
   // Rename a file/folder in place. The renderer passes the existing path + a new
   // base name; the destination is resolved in the SAME parent dir so a rename can
   // never move the item elsewhere or traverse out. Rejects on a name collision.
-  ipcMain.handle('hermes:fs:rename', async (_event, targetPath, newName) => {
+  handleWhenEnabled('fsWrite', 'hermes:fs:rename', async (_event, targetPath, newName) => {
     const src = String(targetPath || '').trim()
     const name = String(newName || '').trim()
 
@@ -207,7 +214,7 @@ export function registerFsIpc({
   // is hardened (resolveRequestedPathForIpc) and the parent must already exist —
   // this never creates directory trees or escapes the allowed roots, and content
   // is size-capped so it can't be abused as a bulk-write primitive.
-  ipcMain.handle('hermes:fs:writeText', async (_event, filePath, content) => {
+  handleWhenEnabled('fsWrite', 'hermes:fs:writeText', async (_event, filePath, content) => {
     const raw = String(filePath || '').trim()
 
     if (!raw) {
@@ -233,7 +240,7 @@ export function registerFsIpc({
 
   // Move a file/folder to the OS trash (recoverable) — the VS Code "Delete"
   // default. `shell.trashItem` routes to Finder/Explorer/Files trash per platform.
-  ipcMain.handle('hermes:fs:trash', async (_event, targetPath) => {
+  handleWhenEnabled('fsWrite', 'hermes:fs:trash', async (_event, targetPath) => {
     const target = String(targetPath || '').trim()
 
     if (!target) {
