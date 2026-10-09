@@ -11,6 +11,7 @@ import { app, ipcMain } from 'electron'
 import nodePty from 'node-pty'
 
 import { resolveTerminalConnectionForSender } from './connection-apply'
+import { capabilityEnabled } from './feature-flags'
 import { ensureSpawnHelperExecutable } from './spawn-helper-perms'
 import { buildInteractiveSshArgs } from './ssh-connection'
 import { createTerminalOutputGate } from './terminal-output-gate'
@@ -58,6 +59,19 @@ export function registerTerminalIpc({
   ensureBackend,
   getSshConnectionState
 }: TerminalIpcDeps): TerminalIpcApi {
+  // Capability gated off: register no `hermes:terminal:*` handler and never
+  // reach node-pty. The API shape is still returned because main.ts consumes it
+  // at MODULE SCOPE — it dereferences `.disposeTerminalSession` immediately and
+  // calls the scope/all disposers from SSH teardown and shutdown without
+  // optional chaining, so returning undefined here crashes the app on boot.
+  if (!capabilityEnabled('terminal')) {
+    return {
+      disposeAllTerminalSessions: () => {},
+      disposeTerminalSession: () => false,
+      disposeTerminalSessionsForSshScope: () => {}
+    }
+  }
+
   const terminalSessions = new Map()
 
   function isExecutableFile(filePath) {
