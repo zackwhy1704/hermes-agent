@@ -14,8 +14,6 @@ import { ipcMain, shell } from 'electron'
 // this fork removes the surface all of them exist to serve, and a door left
 // registered for a deleted surface is still a door.
 import { handleWhenEnabled } from './capability-ipc'
-import { installDesktopPluginFromGit, probePluginRepo } from './desktop-plugin-install'
-import { removeDesktopPlugin } from './desktop-plugin-remove'
 import {
   DESKTOP_PLUGINS_DIR,
   ensureDir,
@@ -137,14 +135,10 @@ export function registerFsIpc({
   // plugins tab, which 2g removes. Resolving this root also creates it.
   handleWhenEnabled('runtimePlugins', 'hermes:fs:desktopPluginsRoot', async () => desktopPluginsRoot())
 
-  // Re-run the unified-half reconcile on demand (after an agent-plugin install /
-  // update / uninstall through the gateway) so the app-level copy tracks the
-  // package without waiting for the next root resolution.
-  ipcMain.handle('hermes:fs:reconcileDesktopPlugins', async () => {
-    const root = await ensureDir(path.join(hermesHome, DESKTOP_PLUGINS_DIR))
-
-    return reconcileUnifiedDesktopHalves(hermesHome, root)
-  })
+  // Upstream re-runs the unified-half reconcile on demand here, copying an
+  // agent-written plugins/<name>/desktop/plugin.js into the app plugin root.
+  // Removed: this fork has no agent-authored desktop plugins to materialize
+  // and no loader to pick them up.
 
   // The LOCAL logs root (`<HERMES_HOME>/logs`, profile-aware) — the error
   // card's "Open Logs" action reveals agent.log/gateway.log without the user
@@ -155,36 +149,12 @@ export function registerFsIpc({
   // one, not the one whose agent.log holds the failure (#119080).
   handleWhenEnabled('fsWrite', 'hermes:fs:logsRoot', async (_event, profile) => localPluginsRoot('logs', profile))
 
-  ipcMain.handle('hermes:plugin:probe', async (_event, payload) => {
-    const identifier = String(payload?.identifier || payload?.repo || '').trim()
-
-    if (!identifier) {
-      return { ok: false, error: 'identifier is required', agent: false, desktop: false, warnings: [] }
-    }
-
-    return probePluginRepo(resolveGitBinary(), identifier)
-  })
-
-  ipcMain.handle('hermes:plugin:installDesktop', async (_event, payload) => {
-    const identifier = String(payload?.identifier || payload?.repo || '').trim()
-
-    if (!identifier) {
-      return { ok: false, error: 'identifier is required' }
-    }
-
-    return installDesktopPluginFromGit(
-      resolveGitBinary(),
-      identifier,
-      await desktopPluginsRoot(),
-      Boolean(payload?.force)
-    )
-  })
-
-  // Uninstall a standalone desktop plugin by FOLDER NAME under the app-level
-  // root. The renderer never passes a path; containment is re-checked inside.
-  ipcMain.handle('hermes:plugin:removeDesktop', async (_event, payload) =>
-    removeDesktopPlugin(path.join(hermesHome, DESKTOP_PLUGINS_DIR), payload?.name)
-  )
+  // Upstream exposes plugin probe / install / remove here. All three are
+  // removed rather than gated, because this fork installs no plugins at all:
+  // probe ran `git ls-remote` against a renderer-supplied identifier and
+  // install ran `git clone` into the plugin root, which together were a
+  // renderer-reachable network fetch and process spawn. Remove deleted a
+  // directory tree under that root.
 
   // Rename a file/folder in place. The renderer passes the existing path + a new
   // base name; the destination is resolved in the SAME parent dir so a rename can

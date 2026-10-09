@@ -482,7 +482,6 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
   ...(launchFlags?.capabilities?.runtimePlugins === true
     ? { desktopPluginsRoot: () => ipcRenderer.invoke('hermes:fs:desktopPluginsRoot') }
     : {}),
-  reconcileDesktopPlugins: () => ipcRenderer.invoke('hermes:fs:reconcileDesktopPlugins'),
   logsRoot: (profile?: string) => ipcRenderer.invoke('hermes:fs:logsRoot', profile),
   renamePath: (targetPath, newName) => ipcRenderer.invoke('hermes:fs:rename', targetPath, newName),
   writeTextFile: (filePath, content) => ipcRenderer.invoke('hermes:fs:writeText', filePath, content),
@@ -568,9 +567,10 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
     return () => ipcRenderer.removeListener('hermes:deep-link', listener)
   },
   signalDeepLinkReady: () => ipcRenderer.invoke('hermes:deep-link-ready'),
-  probePluginRepo: payload => ipcRenderer.invoke('hermes:plugin:probe', payload),
-  installDesktopPlugin: payload => ipcRenderer.invoke('hermes:plugin:installDesktop', payload),
-  removeDesktopPlugin: payload => ipcRenderer.invoke('hermes:plugin:removeDesktop', payload),
+  // probePluginRepo / installDesktopPlugin / removeDesktopPlugin are removed,
+  // not gated: this fork installs no plugins. probe ran `git ls-remote` and
+  // install ran `git clone` into the plugin root, so between them they were a
+  // renderer-reachable network fetch and process spawn.
   onWindowStateChanged: callback => {
     const listener = (_event, payload) => callback(payload)
     ipcRenderer.on('hermes:window-state-changed', listener)
