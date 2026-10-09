@@ -5,6 +5,7 @@
 // plugin installs.
 import { ipcMain } from 'electron'
 
+import { capabilityEnabled } from './feature-flags'
 import { scanGitRepos } from './git-repo-scan'
 import {
   fileDiffVsHead,
@@ -37,6 +38,13 @@ export interface GitIpcDeps {
 }
 
 export function registerGitIpc({ resolveGitBinary, resolveGhBinary }: GitIpcDeps) {
+  // Capability gated off: register no `hermes:git:*` handler at all, so no
+  // renderer code can drive a worktree, branch switch, stage, commit or push.
+  // Safe to return early — main.ts ignores the return value.
+  if (!capabilityEnabled('git')) {
+    return
+  }
+
   // Git-driven worktree management ("Start work" flow). Errors surface to the
   // renderer as rejected promises so it can toast a friendly message.
   ipcMain.handle('hermes:git:worktreeList', async (_event, repoPath) => listWorktrees(repoPath, resolveGitBinary()))

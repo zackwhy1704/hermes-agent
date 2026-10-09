@@ -258,6 +258,7 @@ import {
   tuiResumeArgs
 } from './external-terminal'
 import { f12ShortcutDecision, toF12KeyboardEventPayload } from './f12-shortcut'
+import { handleWhenEnabled } from './capability-ipc'
 import { resolveFeatureFlags } from './feature-flags'
 import {
   installFindShortcut,
@@ -15764,7 +15765,9 @@ ipcMain.on('hermes:window:relay', (event, payload) => {
 // hoping a `hermes` exists on the user's interactive PATH. Resolution only —
 // never ensureRuntime(), which would kick off a first-run install from a menu
 // click; an unresolved runtime is reported instead.
-ipcMain.handle('hermes:window:openInTerminal', async (_event, sessionId, opts) => {
+// Gated with the PTY host: this writes a launcher script and hands it to the
+// OS terminal emulator, which is process spawn by another door.
+handleWhenEnabled('terminal', 'hermes:window:openInTerminal', async (_event, sessionId, opts) => {
   if (typeof sessionId !== 'string' || !sessionId.trim()) {
     return { ok: false, error: 'invalid-session-id' }
   }
