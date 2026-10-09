@@ -15,8 +15,15 @@ const translucencySupport = ipcRenderer.sendSync('hermes:translucency:support')
 const hudWindowing = ipcRenderer.sendSync('hermes:hud:windowing')
 const hudNativeDrag = hudWindowing?.nativeDrag === true
 
-const launchFlags: { localModels?: boolean; guestOnboarding?: boolean } | undefined =
-  ipcRenderer.sendSync('hermes:feature-flags')
+const launchFlags:
+  | { localModels?: boolean; guestOnboarding?: boolean; capabilities?: Record<string, boolean> }
+  | undefined = ipcRenderer.sendSync('hermes:feature-flags')
+
+// Fork capability posture. Default to OFF when the reply is missing: a bridge
+// entry whose handler was never registered would only reject anyway, and the
+// renderer's own feature detection (`typeof fn === 'function'`) is what the app
+// already uses for capabilities an older shell lacks.
+const fileReadEnabled = launchFlags?.capabilities?.fileRead === true
 
 // Local, sanitized skin payload for the first renderer theme paint. This does
 // not wait on `gateway.ready`, so an unreachable remote primary cannot force
@@ -343,14 +350,23 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
   claimStartupLatency: () => ipcRenderer.invoke('hermes:startup-latency:claim'),
   requestMicrophoneAccess: () => ipcRenderer.invoke('hermes:requestMicrophoneAccess'),
   readWindowBelow: () => ipcRenderer.invoke('hermes:window:readBelow'),
-  readFileDataUrl: filePath => ipcRenderer.invoke('hermes:readFileDataUrl', filePath),
-  readFileDataUrlForAttach: filePath => ipcRenderer.invoke('hermes:readFileDataUrlForAttach', filePath),
-  dataUrlReadMax: {
-    get: () => ipcRenderer.invoke('hermes:data-url-read-max:get'),
-    set: maxMb => ipcRenderer.invoke('hermes:data-url-read-max:set', maxMb)
-  },
-  readFileText: filePath => ipcRenderer.invoke('hermes:readFileText', filePath),
-  readPluginSource: (filePath: string) => ipcRenderer.invoke('hermes:readPluginSource', filePath),
+  // The arbitrary-path read doors. None of them confines the requested path to
+  // a root: the main-process resolver expands `~`, accepts `file:` URLs and
+  // resolves anything else against cwd, guarded only by a sensitive-filename
+  // denylist and a size cap. This fork drops them, so a compromised renderer
+  // has no door that returns the bytes of a file the user never chose.
+  ...(fileReadEnabled
+    ? {
+        readFileDataUrl: filePath => ipcRenderer.invoke('hermes:readFileDataUrl', filePath),
+        readFileDataUrlForAttach: filePath => ipcRenderer.invoke('hermes:readFileDataUrlForAttach', filePath),
+        dataUrlReadMax: {
+          get: () => ipcRenderer.invoke('hermes:data-url-read-max:get'),
+          set: maxMb => ipcRenderer.invoke('hermes:data-url-read-max:set', maxMb)
+        },
+        readFileText: filePath => ipcRenderer.invoke('hermes:readFileText', filePath),
+        readPluginSource: (filePath: string) => ipcRenderer.invoke('hermes:readPluginSource', filePath)
+      }
+    : {}),
   selectPaths: options => ipcRenderer.invoke('hermes:selectPaths', options),
   selectSavePath: options => ipcRenderer.invoke('hermes:selectSavePath', options),
   writeClipboard: text => ipcRenderer.invoke('hermes:writeClipboard', text),

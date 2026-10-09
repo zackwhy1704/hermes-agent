@@ -259,7 +259,7 @@ import {
 } from './external-terminal'
 import { f12ShortcutDecision, toF12KeyboardEventPayload } from './f12-shortcut'
 import { handleWhenEnabled } from './capability-ipc'
-import { resolveFeatureFlags } from './feature-flags'
+import { resolveCapabilities, resolveFeatureFlags } from './feature-flags'
 import {
   installFindShortcut,
   installFoundInPageForwarder,
@@ -17747,14 +17747,17 @@ function persistDataUrlReadMaxMb(maxMb) {
   return next
 }
 
-ipcMain.handle('hermes:data-url-read-max:get', () => ({
+// Gated with the read doors it sizes: with no data-url read there is nothing
+// for a cap to bound, and `set` let the renderer raise its own ceiling and
+// persist it across restarts.
+handleWhenEnabled('fileRead', 'hermes:data-url-read-max:get', () => ({
   maxMb: dataUrlReadMaxMb,
   // Keep the default bytes constant visible for tests / diagnostics.
   defaultMaxMb: DATA_URL_READ_DEFAULT_MAX_MB,
   maxBytes: dataUrlReadMaxBytesFromMb(dataUrlReadMaxMb)
 }))
 
-ipcMain.handle('hermes:data-url-read-max:set', (_event, maxMb) => {
+handleWhenEnabled('fileRead', 'hermes:data-url-read-max:set', (_event, maxMb) => {
   const next = persistDataUrlReadMaxMb(maxMb)
 
   return {
@@ -17764,7 +17767,7 @@ ipcMain.handle('hermes:data-url-read-max:set', (_event, maxMb) => {
   }
 })
 
-ipcMain.handle('hermes:readFileDataUrl', async (_event, filePath) => {
+handleWhenEnabled('fileRead', 'hermes:readFileDataUrl', async (_event, filePath) => {
   // Backend-reported paths are WSL/POSIX (`/home/...`, `/mnt/c/...`); on a
   // Windows host bridge them to a UNC/drive form, same as directory reads.
   const bridgedPath = resolveIpcFileReadPath(filePath)
@@ -17788,7 +17791,7 @@ ipcMain.handle('hermes:readFileDataUrl', async (_event, filePath) => {
 // Keep a finite cap so Electron + base64 memory stays bounded while archives
 // can exceed the default 16 MiB preview ceiling (and still fit the gateway
 // WebSocket frame limit after base64 expansion).
-ipcMain.handle('hermes:readFileDataUrlForAttach', async (_event, filePath) => {
+handleWhenEnabled('fileRead', 'hermes:readFileDataUrlForAttach', async (_event, filePath) => {
   const bridgedPath = resolveIpcFileReadPath(filePath)
 
   try {
@@ -17806,7 +17809,7 @@ ipcMain.handle('hermes:readFileDataUrlForAttach', async (_event, filePath) => {
   }
 })
 
-ipcMain.handle('hermes:readFileText', async (_event, filePath) => {
+handleWhenEnabled('fileRead', 'hermes:readFileText', async (_event, filePath) => {
   try {
     const { resolvedPath, stat } = await resolveReadableFileForIpc(resolveIpcFileReadPath(filePath), {
       maxBytes: TEXT_PREVIEW_SOURCE_MAX_BYTES,
@@ -17854,7 +17857,7 @@ ipcMain.handle('hermes:readFileText', async (_event, filePath) => {
 // instead of truncation when the source exceeds it.
 const PLUGIN_SOURCE_MAX_BYTES = 16 * 1024 * 1024
 
-ipcMain.handle('hermes:readPluginSource', async (_event: unknown, filePath: unknown) => {
+handleWhenEnabled('fileRead', 'hermes:readPluginSource', async (_event: unknown, filePath: unknown) => {
   const { resolvedPath, stat } = await resolveReadableFileForIpc(filePath, {
     maxBytes: PLUGIN_SOURCE_MAX_BYTES,
     purpose: 'Plugin source'
@@ -18211,6 +18214,10 @@ ipcMain.on('hermes:feature-flags', (event: IpcMainEvent): void => {
       argv: process.argv,
       canary: resolveUpdaterChannelFromStamp() === 'canary'
     }),
+    // The fork's capability posture, so preload can omit a bridge entry whose
+    // handler was never registered. Omitting the entry is ergonomics, not the
+    // boundary — the boundary is the absent handler.
+    capabilities: resolveCapabilities(),
     guestOnboarding: GUEST_ONBOARDING
   }
 })
