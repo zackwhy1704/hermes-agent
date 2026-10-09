@@ -125,6 +125,7 @@ import {
   readBundleSwapStamp,
   relaunchIntoSwappedBundle
 } from './bundle-swap'
+import { handleWhenEnabled } from './capability-ipc'
 import { CHALLENGE_PARTITION } from './challenge-window'
 import { registerChallengeWindowIpc } from './challenge-window-ipc'
 import { provisionCliLinks } from './cli-provision'
@@ -258,7 +259,6 @@ import {
   tuiResumeArgs
 } from './external-terminal'
 import { f12ShortcutDecision, toF12KeyboardEventPayload } from './f12-shortcut'
-import { handleWhenEnabled } from './capability-ipc'
 import { resolveCapabilities, resolveFeatureFlags } from './feature-flags'
 import {
   installFindShortcut,
@@ -549,6 +549,7 @@ import {
 } from './remote-ws-headers'
 import { enableRendererAccessibility } from './renderer-accessibility'
 import { missingRendererAssets, presentRendererIndexes } from './renderer-bundle'
+import { installRendererCsp } from './renderer-csp'
 import { planLaunchSwitches, readDesktopLaunchConfig } from './renderer-heap-flags'
 import { loadRendererLoadErrorPage } from './renderer-load-error-page'
 import { attachRendererConsoleCapture, formatRendererBoundaryReport } from './renderer-log'
@@ -19325,6 +19326,11 @@ app.on('open-url', (event, url) => {
   handleDeepLink(url)
 })
 
+// Off-machine origins the renderer has requested this session, logged once
+// each. Measured: the header hook DOES see file:// requests on Electron 40, so
+// the policy reaches a packaged document and not only the dev server.
+const cspSeenUrls = new Set<string>()
+
 app.whenReady().then(() => {
   // Post-update relaunch detection (App Installer arm): when the previous
   // version wrote the one-shot pending-relaunch marker before quitting into
@@ -19383,6 +19389,19 @@ app.whenReady().then(() => {
   registerMediaProtocol()
   installEmbedReferer()
   installRemoteHeaderRules()
+  installRendererCsp(
+    session.defaultSession,
+    () => readDesktopConnectionsRegistry().connections.map(connection => connection.url),
+    url => {
+      // Only the off-machine requests are interesting; the renderer's own
+      // file:// asset loads are ~150 lines of noise per boot. Logged once each
+      // so a new outbound destination is visible without a proxy.
+      if (!url.startsWith('file://') && !cspSeenUrls.has(url)) {
+        cspSeenUrls.add(url)
+        rememberLog(`[csp] renderer requested off-machine origin: ${url}`)
+      }
+    }
+  )
 
   if (!preReadyDockSteps.includes('register-deep-link')) {
     registerDeepLinkProtocol()
