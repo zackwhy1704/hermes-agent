@@ -133,7 +133,9 @@ export function registerFsIpc({
     return root
   }
 
-  ipcMain.handle('hermes:fs:desktopPluginsRoot', async () => desktopPluginsRoot())
+  // With the runtime loader gone (2e) the only live caller was the Capabilities
+  // plugins tab, which 2g removes. Resolving this root also creates it.
+  handleWhenEnabled('runtimePlugins', 'hermes:fs:desktopPluginsRoot', async () => desktopPluginsRoot())
 
   // Re-run the unified-half reconcile on demand (after an agent-plugin install /
   // update / uninstall through the gateway) so the app-level copy tracks the

@@ -38,6 +38,10 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
   // Launch-flag fact: the app was started with --local, so the renderer may
   // show the local-models surfaces. Static for the window's lifetime.
   localModelsEnabled: launchFlags?.localModels === true,
+  // This fork's capability posture, so renderer surfaces can decline to
+  // register chrome whose IPC door was never opened. Static for the window's
+  // lifetime, and advisory only — the boundary is the absent handler.
+  capabilities: launchFlags?.capabilities ?? {},
   // Launch-flag fact: the Nous free tier is on for this launch
   // (HERMES_GUEST_ONBOARDING=1 or --guest-onboarding). Read-only; the same
   // decision is stamped onto every backend the app spawns.
@@ -475,7 +479,9 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
   gitRoot: startPath => ipcRenderer.invoke('hermes:fs:gitRoot', startPath),
   revealPath: targetPath => ipcRenderer.invoke('hermes:fs:reveal', targetPath),
   openDir: dirPath => ipcRenderer.invoke('hermes:fs:openDir', dirPath),
-  desktopPluginsRoot: () => ipcRenderer.invoke('hermes:fs:desktopPluginsRoot'),
+  ...(launchFlags?.capabilities?.runtimePlugins === true
+    ? { desktopPluginsRoot: () => ipcRenderer.invoke('hermes:fs:desktopPluginsRoot') }
+    : {}),
   reconcileDesktopPlugins: () => ipcRenderer.invoke('hermes:fs:reconcileDesktopPlugins'),
   logsRoot: (profile?: string) => ipcRenderer.invoke('hermes:fs:logsRoot', profile),
   renamePath: (targetPath, newName) => ipcRenderer.invoke('hermes:fs:rename', targetPath, newName),

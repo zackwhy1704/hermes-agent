@@ -37,7 +37,6 @@ import { SidebarProvider } from '@/components/ui/sidebar'
 import { discoverBundledPlugins } from '@/contrib/plugins'
 import { Slot } from '@/contrib/react/slot'
 import { registry } from '@/contrib/registry'
-import { discoverRuntimePlugins } from '@/contrib/runtime-loader'
 import { LocalizedTabTitle, translateNow } from '@/i18n'
 import { NEW_SESSION_TITLE, sessionTitle as storedSessionTitle } from '@/lib/chat-runtime'
 import {
@@ -323,18 +322,11 @@ registry.registerMany([
     get: () => $layoutEditMode.get(),
     set: enabled => $layoutEditMode.set(enabled)
   }),
-  // The agent's write -> see loop: rescan <hermes home>/desktop-plugins
-  // without relaunching (same-id reloads dispose the previous incarnation).
-  {
-    id: 'plugins.reload',
-    area: PALETTE_AREA,
-    data: {
-      id: 'plugins.reload',
-      label: 'Reload desktop plugins',
-      keywords: ['plugins', 'reload', 'refresh', 'desktop'],
-      run: () => void discoverRuntimePlugins()
-    } satisfies PaletteContribution
-  },
+  // Upstream offers a `plugins.reload` palette command here that rescans
+  // <hermes home>/desktop-plugins. Removed: it was the last live trigger for
+  // the runtime loader after 2e dropped watchRuntimePlugins, and a disk rescan
+  // needs exactly the arbitrary-path read doors 2d removed. This fork has one
+  // plugin and it is compiled in, so there is nothing to reload.
   // The core `::preview{file="…"}` transcript directive — the model (or a
   // skill) renders a workspace HTML file LIVE inside its own message
   // (sandboxed srcdoc iframe; falls back to the classic preview card for

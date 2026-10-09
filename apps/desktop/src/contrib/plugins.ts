@@ -16,7 +16,6 @@
 import { trackGatewayEventDisposers } from './events'
 import { createPluginContext, type HermesPlugin } from './plugin'
 import { pluginActive, publishPlugin } from './plugins-store'
-import { watchRuntimePlugins } from './runtime-loader'
 
 const modules = import.meta.glob<{ default: HermesPlugin }>('../plugins/*/plugin.{js,ts,tsx}', { eager: true })
 
@@ -82,7 +81,11 @@ export function discoverBundledPlugins(): void {
     }
   }
 
-  // The SELF-MAINTAINING disk door (fs-watched hot reloads, slow folder
-  // reconciliation) — the runtime loader pipeline's real, shipping consumer.
-  watchRuntimePlugins()
+  // Upstream starts the runtime disk-plugin loader here (watchRuntimePlugins).
+  // This fork does not: that loader is the only consumer of the arbitrary-path
+  // read doors — it resolves desktopPluginsRoot, readDir's the folder, and
+  // reads each plugin.js through readPluginSource/readFileText. Keeping the
+  // call would keep those doors load-bearing and undo 2d. The Company Brain
+  // UI ships as a bundled plugin in `src/plugins/`, discovered by the glob
+  // above, so nothing needs to be read off disk at runtime.
 }
